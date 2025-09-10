@@ -2,14 +2,14 @@
 PyAuthX.
 ~~~~~~~~
 
-:copyright: (c) 2025-present balegre0
+:copyright: (c) 2025-present hexguard
 :license: MIT, see LICENSE for more details.
 """
 
 __title__ = "pyauthx"
-__author__ = "balegre0"
+__author__ = "hexguard"
 __license__ = "MIT"
-__copyright__ = "Copyright 2025-present balegre0"
+__copyright__ = "Copyright 2025-present hexguard"
 __version__ = "0.0.0.dev0"  # default safe fallback
 
 import contextlib as _contextlib
