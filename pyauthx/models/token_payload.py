@@ -135,7 +135,7 @@ class TokenPayload(BaseModel):
     @model_validator(mode="after")
     def check_timestamps(self: TokenPayload) -> TokenPayload:
         """Ensure 'exp' is greater than 'iat' after all fields are validated."""
-        if self.exp <= self.iat:
+        if float(self.exp) <= float(self.iat):
             msg = "'exp' must be greater than 'iat'"
             raise ValueError(msg)
         return self
