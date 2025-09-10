@@ -14,10 +14,10 @@ maintainers = [{ name = "Brian Alegre", email = "brianalegredev@gmail.com" }]
 dependencies = ["cryptography>=45.0.6", "pydantic>=2.11.7", "pyjwt>=2.10.1"]
 
 [project.urls]
-Homepage = "https://github.com/balegre0/pyauthx"
-Repository = "https://github.com/balegre0/pyauthx"
-"Issue tracker" = "https://github.com/balegre0/pyauthx/issues"
-Changelog = "https://github.com/balegre0/pyauthx/releases"
+Homepage = "https://github.com/hexguard/pyauthx"
+Repository = "https://github.com/hexguard/pyauthx"
+"Issue tracker" = "https://github.com/hexguard/pyauthx/issues"
+Changelog = "https://github.com/hexguard/pyauthx/releases"
 
 [dependency-groups]
 dev = ["pytest>=8.4.1", "ruff==0.12.9", "taskipy==1.14.1"]
