@@ -1,5 +1,6 @@
 """
 PyAuthX.
+
 ~~~~~~~~
 
 :copyright: (c) 2025-present hexguard

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pyauthx"
 dynamic = ["version"]
-description = "Modern auth toolkit for Python — secure JWT, refresh tokens, OAuth2 integration, and more."
+description = "Modern auth toolkit for Python — secure JWT, refresh tokens, etc..."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -22,6 +22,7 @@ Changelog = "https://github.com/hexguard/pyauthx/releases"
 [dependency-groups]
 dev = ["pytest>=8.4.1", "ruff==0.12.9", "taskipy==1.14.1"]
 docs = []
+prometheus = ["prometheus-client>=0.22.1"]
 
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
@@ -51,14 +52,7 @@ exclude = ["tests/", "examples/", "docs/"]
 [tool.ruff.lint]
 select = ["ALL"]
 fixable = ["ALL"]
-ignore = [
-    "D212",   # multi-line summary conflicts
-    "D205",
-    "D400",
-    "D415",
-    "D107",   # missing docstring in __init__
-    "COM812", # conflict with formatter
-]
+ignore = ["D212", "D107", "COM812"]
 
 [tool.ruff.per-file-ignores]
 "__init__.py" = ["F403"]

@@ -22,36 +22,48 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 """
 
+from __future__ import annotations
+
 import re
 import unicodedata
+from re import Pattern
+from typing import TYPE_CHECKING, ClassVar
 
-from pydantic import GetCoreSchemaHandler
 from pydantic_core import core_schema
+from typing_extensions import Self
+
+if TYPE_CHECKING:
+    from pydantic import GetCoreSchemaHandler
+
+__all__ = ["BaseId", "ClientId", "UserId"]
 
 
 class BaseId(str):
+    """Base class for identifier types."""
+
     __slots__ = ()
 
-    _min_length: int
-    _max_length: int
-    _pattern: str = r"^[a-zA-Z0-9_-]+$"
-    _type_name: str = "BaseId"
+    _min_length: ClassVar[int]
+    _max_length: ClassVar[int]
+    _pattern: ClassVar[Pattern[str]] = re.compile(r"^[a-zA-Z0-9_-]+$")
+    _type_name: ClassVar[str] = "BaseId"
 
-    def __new__(cls, value: str) -> "BaseId":
-        value = unicodedata.normalize("NFC", value.strip())
+    def __new__(cls, value: str) -> Self:
+        """Create a new validated identifier."""
+        normalized = unicodedata.normalize("NFC", value.strip())
 
-        if not re.fullmatch(cls._pattern, value):
-            msg = f"{cls._type_name} must match pattern {cls._pattern}"
+        if not cls._pattern.fullmatch(normalized):
+            msg = f"{cls._type_name} must match pattern {cls._pattern.pattern}"
             raise ValueError(msg)
 
-        if not (cls._min_length <= len(value) <= cls._max_length):
+        if not (cls._min_length <= len(normalized) <= cls._max_length):
             msg = (
-                f"{cls._type_name} length must be between {cls._min_length} ",
-                f"and {cls._max_length} characters",
+                f"{cls._type_name} length must be between {cls._min_length} "
+                f"and {cls._max_length} characters"
             )
             raise ValueError(msg)
 
-        return str.__new__(cls, value)
+        return super().__new__(cls, normalized)
 
     def __repr__(self) -> str:
         return f"{self._type_name}({super().__repr__()})"
@@ -68,22 +80,26 @@ class BaseId(str):
 
     @classmethod
     def __get_pydantic_core_schema__(
-        cls, _source_type: type, _handler: GetCoreSchemaHandler
+        cls, _source_type: type[BaseId], _handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
         return core_schema.str_schema(
             min_length=cls._min_length,
             max_length=cls._max_length,
-            pattern=cls._pattern,
+            pattern=cls._pattern.pattern,
         )
 
 
 class UserId(BaseId):
-    _min_length: int = 8
-    _max_length: int = 64
-    _type_name: str = "UserId"
+    """User identifier."""
+
+    _min_length: ClassVar[int] = 8
+    _max_length: ClassVar[int] = 64
+    _type_name: ClassVar[str] = "UserId"
 
 
 class ClientId(BaseId):
-    _min_length: int = 3
-    _max_length: int = 32
-    _type_name: str = "ClientId"
+    """Client identifier."""
+
+    _min_length: ClassVar[int] = 3
+    _max_length: ClassVar[int] = 32
+    _type_name: ClassVar[str] = "ClientId"

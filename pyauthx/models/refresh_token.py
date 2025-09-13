@@ -24,7 +24,6 @@ DEALINGS IN THE SOFTWARE.
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import secrets
 import unicodedata
@@ -42,6 +41,8 @@ from pydantic import (
     field_serializer,
     field_validator,
 )
+
+from pyauthx.common.utils import b64u
 
 if TYPE_CHECKING:
     from ._types import ClientId, UserId
@@ -83,13 +84,14 @@ class RefreshTokenRecord(BaseModel):
     @classmethod
     def validate_expires_at(cls, value: datetime, info: ValidationInfo) -> datetime:
         """Ensure 'expires_at' is in UTC and after 'created_at'."""
-        created_at: datetime | None = info.data.get("created_at")
         if value.tzinfo != UTC:
             msg = "'expires_at' must be in UTC timezone"
             raise ValueError(msg)
-        if created_at and value <= created_at:
+
+        if (created_at := info.data.get("created_at")) and value <= created_at:
             msg = "'expires_at' must be after 'created_at'"
             raise ValueError(msg)
+
         return value
 
     @classmethod
@@ -105,9 +107,10 @@ class RefreshTokenRecord(BaseModel):
         if not raw_token or len(raw_token) < cls.MIN_TOKEN_LENGTH:
             msg = f"Raw token must be at least {cls.MIN_TOKEN_LENGTH} characters long"
             raise ValueError(msg)
+
         normalized_token = unicodedata.normalize("NFC", raw_token)
         token_hash = hashlib.sha256(normalized_token.encode("utf-8")).digest()
-        expires_at = expires_at.astimezone(UTC)
+        expires_at_utc = expires_at.astimezone(UTC)
 
         thumbprint = None
         if mtls_cert:
@@ -117,7 +120,7 @@ class RefreshTokenRecord(BaseModel):
         return cls(
             token_hash=token_hash,
             user_id=user_id,
-            expires_at=expires_at,
+            expires_at=expires_at_utc,
             client_id=client_id,
             mtls_cert_thumbprint=thumbprint,
         )
@@ -127,13 +130,15 @@ class RefreshTokenRecord(BaseModel):
         """Generate a new secure random token."""
         size = length or cls.TOKEN_BYTES
         raw_bytes = secrets.token_bytes(size)
-        token = base64.urlsafe_b64encode(raw_bytes).rstrip(b"=").decode("ascii")
+        token = b64u(raw_bytes)
+
         if len(token) <= cls.MIN_TOKEN_LENGTH:
             msg = "Generated token is too short, try increasing length"
             raise ValueError(msg)
+
         return token
 
     @field_serializer("token_hash")
-    def serialize_token_hash(self, v: bytes) -> str:
+    def serialize_token_hash(self, token_hash: bytes) -> str:
         """Serialize the token hash as a hex string."""
-        return v.hex()
+        return token_hash.hex()

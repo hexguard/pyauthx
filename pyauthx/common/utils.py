@@ -22,64 +22,20 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 """
 
+import base64
+from typing import TypeAlias
 
-class SecurityError(Exception):
-    """
-    Base exception for security-related issues.
+__all__ = ["b64u"]
 
-    Raised when a security policy or invariant is violated.
-    """
-
-    __slots__ = ()
+Base64Encoded: TypeAlias = str
 
 
-class CryptographicError(Exception):
-    """
-    Exception for cryptographic operation failures.
+def b64u(data: bytes) -> Base64Encoded:
+    """Encode data to Base64 URL-safe string without padding."""
+    if not isinstance(data, bytes):
+        msg = f"Expected bytes, got {type(data).__name__}"
+        raise TypeError(msg)
 
-    Raised when encryption, decryption, or signing goes wrong.
-    """
-
-    __slots__ = ()
-
-
-class UnsupportedAlgorithmError(CryptographicError):
-    """..."""
-
-
-class TokenError(Exception):
-    """..."""
-
-    __slots__ = ()
-
-
-class TokenExpiredError(TokenError):
-    """..."""
-
-
-class InvalidTokenError(TokenError):
-    """..."""
-
-
-class TokenReuseError(TokenError):
-    """...."""
-
-
-class MTLSError(BaseException):
-    """..."""
-
-
-class CertificateExtensionError(MTLSError):
-    """...."""
-
-
-class ChainValidationError(MTLSError):
-    """...."""
-
-
-class SignatureValidationError(MTLSError):
-    """...."""
-
-
-class TrustAnchorError(MTLSError):
-    """...."""
+    encoded = base64.urlsafe_b64encode(data)
+    stripped = encoded.rstrip(b"=")
+    return stripped.decode("ascii")

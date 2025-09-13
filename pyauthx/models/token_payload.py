@@ -43,7 +43,7 @@ from pydantic import (
 if TYPE_CHECKING:
     from ._types import ClientId, UserId
 
-__all__ = ["TokenPayload", "UnixTimestamp"]
+__all__ = ["NonceStr", "TokenPayload", "UnixTimestamp"]
 
 UnixTimestamp = Annotated[
     float,
@@ -60,29 +60,20 @@ class TokenPayload(BaseModel):
     """
     JWT payload structure with standard claims and strict validation.
 
-    Attributes:
-        sub: Subject identifier (user ID)
-        exp: Expiration timestamp (must be > iat)
-        iat: Issued-at timestamp (default: now)
-        jti: JWT unique ID (UUID)
-        aud: Intended audience (client ID)
-        iss: Token issuer
-        scope: Authorization scope
-        azp: Authorized party (client ID)
-        nonce: Nonce for replay protection (alphanumeric / URL-safe)
-
+    Implements RFC 7519 standard claims with additional security validations.
     """
 
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
         str_strip_whitespace=True,
+        validate_assignment=True,
     )
 
-    # Constants class
+    # Pattern compilation for reuse
     NONCE_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9\-_]+$")
 
-    # Fields standard (RFC 7519)
+    # Standard claims (RFC 7519)
     sub: UserId = Field(..., description="Subject identifier (user ID)")
     exp: UnixTimestamp = Field(
         ..., description="Expiration timestamp (seconds since epoch)"
@@ -94,7 +85,7 @@ class TokenPayload(BaseModel):
     jti: UUID = Field(default_factory=uuid4, description="Unique JWT ID")
     aud: ClientId = Field(..., description="Intended audience (client ID)")
 
-    # Optional fields standard (RFC 7519)
+    # Optional standard claims (RFC 7519)
     iss: str | None = Field(
         default=None, min_length=3, max_length=256, description="Token issuer"
     )
@@ -113,12 +104,21 @@ class TokenPayload(BaseModel):
         """Serialize UUID to string for JSON compatibility."""
         return str(jti)
 
+    @field_validator("exp", mode="before")
+    @classmethod
+    def validate_exp_timestamp(cls, value: float | datetime) -> float:
+        """Convert datetime to timestamp if needed."""
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=UTC)
+            return value.timestamp()
+        return value
+
     @field_validator("exp")
     @classmethod
     def validate_exp(cls, exp: float, info: ValidationInfo) -> float:
         """Ensure expiration is after issued-at timestamp."""
-        iat: float | None = info.data.get("iat")
-        if iat is not None and exp <= iat:
+        if (iat := info.data.get("iat")) and exp <= iat:
             msg = "Expiration timestamp must be greater than issued-at timestamp."
             raise ValueError(msg)
         return exp
@@ -127,15 +127,23 @@ class TokenPayload(BaseModel):
     @classmethod
     def validate_nonce(cls, nonce: str | None) -> str | None:
         """Ensure nonce matches strict URL-safe pattern."""
-        if nonce and not re.fullmatch(r"[A-Za-z0-9\-_]+", nonce):
+        if nonce and not cls.NONCE_PATTERN.fullmatch(nonce):
             msg = "Nonce must be alphanumeric or URL-safe base64"
             raise ValueError(msg)
         return nonce
 
     @model_validator(mode="after")
-    def check_timestamps(self: TokenPayload) -> TokenPayload:
+    def check_timestamps(self) -> TokenPayload:
         """Ensure 'exp' is greater than 'iat' after all fields are validated."""
-        if float(self.exp) <= float(self.iat):
+        if self.exp <= self.iat:
             msg = "'exp' must be greater than 'iat'"
             raise ValueError(msg)
         return self
+
+    def is_expired(self, leeway: float = 0) -> bool:
+        """Check if the token is expired."""
+        return datetime.now(UTC).timestamp() > self.exp + leeway
+
+    def time_until_expiry(self) -> float:
+        """Get time until token expiry in seconds."""
+        return self.exp - datetime.now(UTC).timestamp()
