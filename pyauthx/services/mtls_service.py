@@ -46,7 +46,7 @@ from pyauthx.exceptions import (
 if TYPE_CHECKING:
     import ssl
 
-__all__ = ["CertificateInfo", "MTLSValidator"]
+__all__ = ["CertificateInfo", "MTLSService"]
 
 _HASH_ALGORITHM: Final[hashes.HashAlgorithm] = hashes.SHA256()
 
@@ -64,7 +64,7 @@ class CertificateInfo(TypedDict):
 
 
 @final
-class MTLSValidator:
+class MTLSService:
     """
     Validates mTLS certificates with chain of trust verification.
 

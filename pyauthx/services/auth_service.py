@@ -32,6 +32,8 @@ from pyauthx.models import ClientId, UserId
 if TYPE_CHECKING:
     from . import RefreshService, TokenService
 
+__all__ = ["AuthService", "MTLSServiceProtocol"]
+
 
 class MTLSServiceProtocol(Protocol):
     """Protocol interface for an mTLS service."""
@@ -42,7 +44,7 @@ class MTLSServiceProtocol(Protocol):
 
 
 @final
-class AuthManager:
+class AuthService:
     """High-level orchestrator for authentication flows."""
 
     __slots__ = ("_mtls", "_refresh", "_tokens")

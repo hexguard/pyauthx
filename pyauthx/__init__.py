@@ -18,6 +18,7 @@ import logging as _logging
 from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _version
 
+from ._main import *
 from .common import *
 from .core import *
 from .integrations import *

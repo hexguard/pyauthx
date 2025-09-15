@@ -20,9 +20,9 @@ Repository = "https://github.com/hexguard/pyauthx"
 Changelog = "https://github.com/hexguard/pyauthx/releases"
 
 [dependency-groups]
-dev = ["pytest>=8.4.1", "ruff==0.12.9", "taskipy==1.14.1"]
+dev = ["ruff==0.12.9", "taskipy==1.14.1"]
+test = ["freezegun>=1.5.5", "pytest>=8.4.1"]
 docs = []
-prometheus = ["prometheus-client>=0.22.1"]
 
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
@@ -39,7 +39,7 @@ include = ["pyauthx/py.typed"]
 packages = ["pyauthx/"]
 
 [tool.taskipy.tasks]
-test = "pytest"
+test = "python -m pytest"
 lint = "ruff check ."
 publish = "uv publish"
 docs = "mkdocs serve"

@@ -50,6 +50,10 @@ class BaseId(str):
 
     def __new__(cls, value: str) -> Self:
         """Create a new validated identifier."""
+        if not isinstance(value, str):  # type: ignore[reportUnnecessaryIsInstance]
+            msg = f"{cls._type_name} must be a string, got {type(value).__name__!r}"
+            raise TypeError(msg)
+
         normalized = unicodedata.normalize("NFC", value.strip())
 
         if not cls._pattern.fullmatch(normalized):

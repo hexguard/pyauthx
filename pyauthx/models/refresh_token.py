@@ -28,7 +28,7 @@ import hashlib
 import secrets
 import unicodedata
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Annotated, Final
+from typing import TYPE_CHECKING, Annotated, ClassVar
 from uuid import UUID, uuid4
 
 from pydantic import (
@@ -49,18 +49,16 @@ if TYPE_CHECKING:
 
 __all__ = ["ExpiresAt", "RefreshTokenRecord", "SHA256Hash", "Thumbprint"]
 
-SHA256_HASH_LENGTH: Final[int] = 32  # SHA-256 produces 32-byte hashes
-
+SHA256_HASH_LENGTH: int = 32  # SHA-256 always produces 32-byte hashes
 ExpiresAt = Annotated[datetime, Field(description="UTC expiration datetime")]
 SHA256Hash = Annotated[bytes, conbytes(min_length=32, max_length=32)]
 Thumbprint = Annotated[
-    str,
-    constr(min_length=64, max_length=64, pattern=r"^[a-f0-9]{64}$"),
+    str, constr(min_length=64, max_length=64, pattern=r"^[a-f0-9]{64}$")
 ]
 
 
 class RefreshTokenRecord(BaseModel):
-    """Refresh token database record structure."""
+    """Immutable refresh token database record with strong typing and validation."""
 
     model_config = ConfigDict(
         extra="forbid",
@@ -68,8 +66,8 @@ class RefreshTokenRecord(BaseModel):
         str_strip_whitespace=True,
     )
 
-    TOKEN_BYTES: Final[int] = 32  # 256 bits tokens of entropy
-    MIN_TOKEN_LENGTH: Final[int] = 16
+    TOKEN_BYTES: ClassVar[int] = 32  # 256-bit token entropy
+    MIN_TOKEN_LENGTH: ClassVar[int] = 16
 
     token_hash: SHA256Hash
     user_id: UserId
@@ -83,13 +81,14 @@ class RefreshTokenRecord(BaseModel):
     @field_validator("expires_at")
     @classmethod
     def validate_expires_at(cls, value: datetime, info: ValidationInfo) -> datetime:
-        """Ensure 'expires_at' is in UTC and after 'created_at'."""
+        """Ensure `expires_at` is in UTC and strictly after `created_at`."""
         if value.tzinfo != UTC:
             msg = "'expires_at' must be in UTC timezone"
             raise ValueError(msg)
 
-        if (created_at := info.data.get("created_at")) and value <= created_at:
-            msg = "'expires_at' must be after 'created_at'"
+        created_at = info.data.get("created_at")
+        if created_at and value <= created_at:
+            msg = "'expires_at' must be strictly after 'created_at'"
             raise ValueError(msg)
 
         return value
@@ -103,14 +102,13 @@ class RefreshTokenRecord(BaseModel):
         client_id: ClientId | None = None,
         mtls_cert: str | None = None,
     ) -> RefreshTokenRecord:
-        """Create a new refresh token record from raw token and parameters."""
+        """Create a new refresh token record from raw token and metadata."""
         if not raw_token or len(raw_token) < cls.MIN_TOKEN_LENGTH:
             msg = f"Raw token must be at least {cls.MIN_TOKEN_LENGTH} characters long"
             raise ValueError(msg)
 
         normalized_token = unicodedata.normalize("NFC", raw_token)
         token_hash = hashlib.sha256(normalized_token.encode("utf-8")).digest()
-        expires_at_utc = expires_at.astimezone(UTC)
 
         thumbprint = None
         if mtls_cert:
@@ -120,20 +118,20 @@ class RefreshTokenRecord(BaseModel):
         return cls(
             token_hash=token_hash,
             user_id=user_id,
-            expires_at=expires_at_utc,
+            expires_at=expires_at.astimezone(UTC),
             client_id=client_id,
             mtls_cert_thumbprint=thumbprint,
         )
 
     @classmethod
     def generate_token(cls, length: int | None = None) -> str:
-        """Generate a new secure random token."""
+        """Generate a secure random token with guaranteed minimum entropy."""
         size = length or cls.TOKEN_BYTES
         raw_bytes = secrets.token_bytes(size)
         token = b64u(raw_bytes)
 
         if len(token) <= cls.MIN_TOKEN_LENGTH:
-            msg = "Generated token is too short, try increasing length"
+            msg = "Generated token is too short; increase `length` or `TOKEN_BYTES`."
             raise ValueError(msg)
 
         return token

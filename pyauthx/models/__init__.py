@@ -12,3 +12,6 @@ from .refresh_token import RefreshTokenRecord
 from .token_payload import TokenPayload
 
 __all__ = ["ClientId", "RefreshTokenRecord", "TokenPayload", "UserId"]
+
+RefreshTokenRecord.model_rebuild()
+TokenPayload.model_rebuild()

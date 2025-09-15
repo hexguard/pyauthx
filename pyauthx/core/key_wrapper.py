@@ -510,7 +510,7 @@ class KeyWrapper:
     @staticmethod
     def get_key_metadata(key_data: bytes) -> KeyMetadata:
         """Extract metadata from cryptographic key data."""
-        metadata: KeyMetadata
+        metadata: KeyMetadata | None = None
 
         try:
             # Try to load as public key first
