@@ -43,11 +43,11 @@ class KeyAlgorithm(Enum):
     """Supported cryptographic algorithms."""
 
     RSA = auto()
-    EC = auto()
-    ED25519 = auto()
-    X25519 = auto()
-    AES = auto()
-    HMAC = auto()
+    EC = auto()  # ECDSA (P-256, P-384, P-521)
+    ED25519 = auto()  # EdDSA signing (RFC 8032)
+    X25519 = auto()  # ECDH key agreement (RFC 7748)
+    AES = auto()  # Symmetric encryption (GCM, CBC)
+    HMAC = auto()  # MAC generation/verification
 
 
 class KeyUsage(Enum):
@@ -65,10 +65,10 @@ class KeyUsage(Enum):
 class KeyWrapFormat(Enum):
     """Supported key wrapping formats."""
 
-    RAW = auto()
-    PKCS8 = auto()
-    SPKI = auto()
-    JWK = auto()
+    RAW = auto()  # Raw binary key bytes
+    PKCS8 = auto()  # Private key encoding
+    SPKI = auto()  # Public key encoding
+    JWK = auto()  # JSON Web Key (RFC 7517)
     PEM = auto()
     DER = auto()
 
@@ -77,8 +77,8 @@ class KeyMetadata(TypedDict):
     """Metadata for cryptographic keys."""
 
     algorithm: KeyAlgorithm
-    key_size: int | None
-    curve: str | None
+    key_size: int | None  # in bits, or None for curve-based keys
+    curve: str | None  # e.g., "P-256" or "X25519"
     usages: tuple[KeyUsage, ...]
     format: KeyWrapFormat
 
