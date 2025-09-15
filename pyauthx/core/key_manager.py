@@ -35,6 +35,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
+from pyauthx.common.utils import b64u
+
 from ._internal._protocols import KeyAlgorithm, KeyMetadata, KeyUsage, KeyWrapFormat
 
 __all__ = ["Jwk", "KeyManager"]
@@ -155,12 +157,46 @@ class KeyManager:
         for key_id in [self._current_key_id] + [
             k_id for _, k_id in self._previous_keys
         ]:
-            if metadata := self._key_metadata.get(key_id):
+            metadata = self._key_metadata.get(key_id)
+            key_pem = self._key_store.get(key_id)
+
+            if not metadata or not key_pem:
+                continue
+
+            if metadata["algorithm"] == KeyAlgorithm.HMAC:
+                continue
+
+            private_key = load_pem_private_key(key_pem, password=None)
+            public_key = private_key.public_key()
+
+            if isinstance(public_key, rsa.RSAPublicKey):
+                numbers = public_key.public_numbers()
+                n = numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")
+                e = numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")
+
                 jwk: Jwk = {
-                    "kty": "RSA" if metadata["algorithm"] == KeyAlgorithm.RSA else "EC",
+                    "kty": "RSA",
                     "kid": key_id,
                     "use": "sig",
                     "alg": self._algorithm,
+                    "n": b64u(n),
+                    "e": b64u(e),
+                }
+                jwks.append(jwk)
+
+            elif isinstance(public_key, ec.EllipticCurvePublicKey):
+                numbers = public_key.public_numbers()
+                x = numbers.x.to_bytes((numbers.x.bit_length() + 7) // 8, "big")
+                y = numbers.y.to_bytes((numbers.y.bit_length() + 7) // 8, "big")
+
+                jwk: Jwk = {
+                    "kty": "EC",
+                    "kid": key_id,
+                    "use": "sig",
+                    "alg": self._algorithm,
+                    "crv": str(metadata["curve"]),
+                    "x": b64u(x),
+                    "y": b64u(y),
                 }
                 jwks.append(jwk)
 
