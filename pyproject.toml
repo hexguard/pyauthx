@@ -24,6 +24,9 @@ dev = ["ruff==0.12.9", "taskipy==1.14.1"]
 test = ["freezegun>=1.5.5", "pytest>=8.4.1"]
 docs = []
 
+devtools = []
+prometheus = []
+
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
 
