@@ -31,7 +31,7 @@ Base64Encoded: TypeAlias = str
 
 
 def b64u(data: bytes) -> Base64Encoded:
-    """Encode data to Base64 URL-safe string without padding."""
+    """Encode data to Base64 URL-safe string without padding (RFC 7517)."""
     if not isinstance(data, bytes):
         msg = f"Expected bytes, got {type(data).__name__}"
         raise TypeError(msg)
