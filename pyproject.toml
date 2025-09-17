@@ -5,13 +5,34 @@ build-backend = "hatchling.build"
 [project]
 name = "pyauthx"
 dynamic = ["version"]
-description = "Modern auth toolkit for Python — secure JWT, refresh tokens, etc..."
+description = "Modern auth toolkit for Python — with batteries."
+authors = [{ name = "hexguard", email = "hello@hexguard.dev" }]
+license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
-authors = [{ name = "Brian Alegre", email = "brianalegredev@gmail.com" }]
-maintainers = [{ name = "Brian Alegre", email = "brianalegredev@gmail.com" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
+]
 dependencies = ["cryptography>=45.0.6", "pydantic>=2.11.7", "pyjwt>=2.10.1"]
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+version-source = "git-tag"
+tag-pattern = "^v(?P<version>\\d+\\.\\d+\\.\\d+.*)$"
+fallback-version = "0.0.0.dev0"
+dirty-suffix = ".dirty"
+
+[dependency-groups]
+dev = ["ruff==0.12.9", "taskipy==1.14.1"]
 
 [project.urls]
 Homepage = "https://github.com/hexguard/pyauthx"
@@ -19,27 +40,15 @@ Repository = "https://github.com/hexguard/pyauthx"
 "Issue tracker" = "https://github.com/hexguard/pyauthx/issues"
 Changelog = "https://github.com/hexguard/pyauthx/releases"
 
-[dependency-groups]
-dev = ["ruff==0.12.9", "taskipy==1.14.1"]
-test = ["freezegun>=1.5.5", "pytest>=8.4.1"]
-docs = []
-
-devtools = []
-prometheus = []
-
-[tool.hatch.version]
-source = "uv-dynamic-versioning"
-
-[tool.uv-dynamic-versioning]
-version-source = "git-tag"
-fallback-version = "0.0.0.dev0"
-dirty-suffix = ".dirty"
-
 [tool.hatch.build]
 include = ["pyauthx/py.typed"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["pyauthx/"]
+
+[tool.hatch.publish]
+sign = true
+identity = "hexguard"
 
 [tool.taskipy.tasks]
 test = "python -m pytest"
@@ -55,7 +64,15 @@ exclude = ["tests/", "examples/", "docs/"]
 [tool.ruff.lint]
 select = ["ALL"]
 fixable = ["ALL"]
-ignore = ["D212", "D107", "COM812"]
+ignore = [
+    "D212",   # docstring style
+    "D107",   # missing docstring in __init__
+    "COM812", # trailing comma
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+preview = true
 
 [tool.ruff.per-file-ignores]
 "__init__.py" = ["F403"]
