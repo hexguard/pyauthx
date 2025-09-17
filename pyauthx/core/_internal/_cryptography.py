@@ -55,6 +55,8 @@ TAG_SIZE: Final[int] = 16  # 128 bits for GCM
 TAG_NONCE_SIZE: Final[int] = NONCE_SIZE + TAG_SIZE
 WRAPPED_KEY_LENGTH_SIZE: Final[int] = 4  # Bytes for wrapped key length
 
+_BACKEND = default_backend()
+
 
 @final
 @dataclass(frozen=True, slots=True)
@@ -82,7 +84,7 @@ class AES256GCM:
             nonce = secrets.token_bytes(NONCE_SIZE)
 
             cipher = Cipher(
-                algorithms.AES(self.key), modes.GCM(nonce), backend=default_backend()
+                algorithms.AES(self.key), modes.GCM(nonce), backend=_BACKEND
             )
 
             encryptor = cipher.encryptor()
@@ -117,7 +119,7 @@ class AES256GCM:
             cipher = Cipher(
                 algorithms.AES(self.key),
                 modes.GCM(nonce, tag),
-                backend=default_backend(),
+                backend=_BACKEND,
             )
 
             decryptor = cipher.decryptor()
