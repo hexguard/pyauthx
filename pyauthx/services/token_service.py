@@ -31,7 +31,11 @@ import jwt
 from jwt import PyJWTError
 from pydantic import ValidationError
 
-from pyauthx.exceptions import InvalidTokenError, SecurityError, TokenExpiredError
+from pyauthx.exceptions import (
+    InvalidTokenError,
+    SecurityError,
+    TokenExpiredError,
+)
 from pyauthx.models import ClientId, TokenPayload, UserId
 
 if TYPE_CHECKING:
@@ -40,14 +44,21 @@ if TYPE_CHECKING:
 
 @final
 class TokenService:
-    """Encapsulates JWT creation and verification logic."""
+    """Encapsulates JWT creation and verification logic with RFC 7519 compliance."""
 
-    __slots__ = ("_algorithm", "_keys", "_ttl")
+    __slots__ = ("_algorithm", "_clock_skew", "_keys", "_ttl")
 
-    def __init__(self, key_manager: KeyManager, *, access_token_ttl: int) -> None:
+    def __init__(
+        self,
+        key_manager: KeyManager,
+        *,
+        access_token_ttl: int,
+        clock_skew: int = 60,
+    ) -> None:
         self._keys: Final[KeyManager] = key_manager
         self._algorithm: Final[str] = key_manager.algorithm
         self._ttl: Final[int] = access_token_ttl
+        self._clock_skew: Final[int] = clock_skew
 
     def _fail(
         self, msg: str, exc: type[Exception], cause: Exception | None = None
@@ -59,10 +70,13 @@ class TokenService:
     ) -> str:
         """Generate signed JWT access token."""
         try:
+            now = datetime.now(UTC)
             payload = TokenPayload(
                 sub=subject,
                 aud=audience,
-                exp=(datetime.now(UTC) + timedelta(seconds=self._ttl)).timestamp(),
+                iat=now.timestamp(),
+                nbf=now.timestamp(),
+                exp=(now + timedelta(seconds=self._ttl)).timestamp(),
                 iss=issuer,
             ).model_dump()
 
@@ -76,9 +90,13 @@ class TokenService:
             self._fail("Failed to create token", SecurityError, e)
 
     def verify(
-        self, token: str, *, audience: ClientId, issuer: str | None = None
+        self,
+        token: str,
+        *,
+        audience: ClientId,
+        issuer: str | None = None,
     ) -> TokenPayload:
-        """Validate JWT signature and claims."""
+        """Validate JWT signature and claims (RFC 7519: exp, nbf, iat, aud, iss)."""
         try:
             header = jwt.get_unverified_header(token)
             kid = header.get("kid")
@@ -93,13 +111,32 @@ class TokenService:
                 audience=audience,
                 issuer=issuer,
                 options={
+                    "verify_exp": False,
+                    "verify_nbf": False,
                     "require_exp": True,
                     "require_iat": True,
                     "verify_aud": True,
                     "verify_iss": bool(issuer),
                 },
             )
+
+            now = datetime.now(UTC).timestamp()
+            skew = self._clock_skew
+
+            exp = payload.get("exp")
+            if exp is None or now > exp + skew:
+                self._fail("Token expired", TokenExpiredError)
+
+            nbf = payload.get("nbf")
+            if nbf is not None and now + skew < nbf:
+                self._fail("Token not yet valid (nbf)", InvalidTokenError)
+
+            iat = payload.get("iat")
+            if iat is not None and iat - skew > now:
+                self._fail("Token issued in the future", InvalidTokenError)
+
             return TokenPayload(**payload)
+
         except jwt.ExpiredSignatureError as e:
             self._fail("Token expired", TokenExpiredError, e)
         except jwt.InvalidTokenError as e:
