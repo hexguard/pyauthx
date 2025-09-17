@@ -49,6 +49,7 @@ if TYPE_CHECKING:
 __all__ = ["CertificateInfo", "MTLSService"]
 
 _HASH_ALGORITHM: Final[hashes.HashAlgorithm] = hashes.SHA256()
+_BACKEND = default_backend()
 
 
 class CertificateInfo(TypedDict):
@@ -104,7 +105,7 @@ class MTLSService:
     def extract_certificate_info(self, ssl_obj: ssl.SSLObject) -> CertificateInfo:
         """Extract structured info from a peer certificate."""
         der_cert = self._get_der_certificate(ssl_obj)
-        x509_cert = x509.load_der_x509_certificate(der_cert, default_backend())
+        x509_cert = x509.load_der_x509_certificate(der_cert, _BACKEND)
         return self._parse_certificate_info(x509_cert)
 
     def _get_der_certificate(self, ssl_obj: ssl.SSLObject) -> bytes:
@@ -152,7 +153,7 @@ class MTLSService:
     ) -> bool:
         """Perform full certificate validation pipeline."""
         x509_cert = x509.load_der_x509_certificate(
-            self._get_der_certificate(ssl_obj), default_backend()
+            self._get_der_certificate(ssl_obj), _BACKEND
         )
         return self._validate_certificate(
             x509_cert, expected_fingerprint, check_ocsp=check_ocsp
