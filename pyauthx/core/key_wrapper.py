@@ -54,6 +54,9 @@ __all__ = ["ECIESKeyWrapper", "KeyWrapper", "RSAKeyWrapper"]
 # ruff: noqa: ARG004 (...)
 
 
+_BACKEND = default_backend()
+
+
 class KeyWrapper:
     """Provides secure key wrapping using multiple encryption schemes."""
 
@@ -179,7 +182,7 @@ class KeyWrapper:
         associated_data: bytes | None = None,
     ) -> bytes:
         """Wrap a key using RSA-OAEP encryption."""
-        public_key = load_pem_public_key(public_key_pem, backend=default_backend())
+        public_key = load_pem_public_key(public_key_pem, backend=_BACKEND)
         if not isinstance(public_key, rsa.RSAPublicKey):
             msg = "RSA public key required"
             raise TypeError(msg)
@@ -214,13 +217,13 @@ class KeyWrapper:
         associated_data: bytes | None = None,
     ) -> bytes:
         """Wrap a key using ECIES encryption."""
-        public_key = load_pem_public_key(public_key_pem, backend=default_backend())
+        public_key = load_pem_public_key(public_key_pem, backend=_BACKEND)
         if not isinstance(public_key, ec.EllipticCurvePublicKey):
             msg = "EC public key required"
             raise TypeError(msg)
 
         # Generate ephemeral key pair
-        ephemeral_key = ec.generate_private_key(public_key.curve, default_backend())
+        ephemeral_key = ec.generate_private_key(public_key.curve, _BACKEND)
         ephemeral_pub = ephemeral_key.public_key()
 
         # Key derivation with associated data
@@ -236,7 +239,7 @@ class KeyWrapper:
             length=KeyWrapper._HKDF_LENGTH,
             salt=None,
             info=hkdf_info,
-            backend=default_backend(),
+            backend=_BACKEND,
         ).derive(shared_key)
 
         # AES-GCM encryption with associated data
@@ -379,7 +382,7 @@ class KeyWrapper:
         ciphertext = wrapped_key[ptr:]
 
         private_key = load_pem_private_key(
-            private_key_pem, password=None, backend=default_backend()
+            private_key_pem, password=None, backend=_BACKEND
         )
         if not isinstance(private_key, rsa.RSAPrivateKey):
             msg = "RSA private key required"
@@ -432,7 +435,7 @@ class KeyWrapper:
 
         # Load private key
         private_key = load_pem_private_key(
-            private_key_pem, password=None, backend=default_backend()
+            private_key_pem, password=None, backend=_BACKEND
         )
         if not isinstance(private_key, ec.EllipticCurvePrivateKey):
             msg = "EC private key required"
@@ -456,7 +459,7 @@ class KeyWrapper:
             length=KeyWrapper._HKDF_LENGTH,
             salt=None,
             info=hkdf_info,
-            backend=default_backend(),
+            backend=_BACKEND,
         ).derive(shared_key)
 
         try:
@@ -515,7 +518,7 @@ class KeyWrapper:
         try:
             # Try to load as public key first
             try:
-                public_key = load_pem_public_key(key_data, backend=default_backend())
+                public_key = load_pem_public_key(key_data, backend=_BACKEND)
                 if isinstance(public_key, rsa.RSAPublicKey):
                     metadata = {
                         "algorithm": KeyAlgorithm.RSA,
@@ -547,7 +550,7 @@ class KeyWrapper:
             # Try to load as private key
             try:
                 private_key = load_pem_private_key(
-                    key_data, password=None, backend=default_backend()
+                    key_data, password=None, backend=_BACKEND
                 )
                 if isinstance(private_key, rsa.RSAPrivateKey):
                     metadata = {
