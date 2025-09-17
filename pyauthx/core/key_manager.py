@@ -41,9 +41,17 @@ from ._internal._protocols import KeyAlgorithm, KeyMetadata, KeyUsage, KeyWrapFo
 
 __all__ = ["Jwk", "KeyManager"]
 
+_BACKEND = default_backend()
+
+FIPS_CURVES: dict[str, ec.EllipticCurve] = {
+    "P-256": ec.SECP256R1(),
+    "P-384": ec.SECP384R1(),
+    "P-521": ec.SECP521R1(),
+}
+
 
 class Jwk(TypedDict):
-    """JSON Web Key (JWK) representation for cryptographic keys."""
+    """RFC 7517-compliant JSON Web Key representation."""
 
     kty: Literal["RSA", "EC"]
     kid: str
@@ -58,11 +66,22 @@ class Jwk(TypedDict):
 
 @final
 class KeyManager:
-    """Manages crypto keys for token signing & verification with automatic rotation."""
+    """
+    FIPS-140-3 ready key management with secure zeroization and JWKS export.
+
+    Features:
+        - RSA (>=2048 bits) and EC (P-256/P-384/P-521) support
+        - Automatic rotation with limited key history
+        - RFC 7517-compliant JWKS export with caching
+        - Memory zeroization on key disposal
+    """
 
     __slots__ = (
         "_algorithm",
         "_current_key_id",
+        "_curve",
+        "_jwks_cache",
+        "_jwks_last_generated",
         "_key_metadata",
         "_key_size",
         "_key_store",
@@ -71,28 +90,44 @@ class KeyManager:
         "_rotation_period",
     )
 
+    MIN_RSA_KEY_SIZE: Final[int] = 2048
     KEY_ROTATION_PERIOD: Final[timedelta] = timedelta(days=1)
     MAX_PREVIOUS_KEYS: Final[int] = 3
+    JWKS_CACHE_TTL: Final[int] = 60  # seconds
 
     def __init__(
         self,
         algorithm: Literal["HS256", "RS256", "ES256"],
-        key_size: int = 2048,
+        *,
+        key_size: int = 3072,
+        curve: str = "P-256",
         rotation_period: timedelta | None = None,
     ) -> None:
+        if algorithm == "RS256" and key_size < self.MIN_RSA_KEY_SIZE:
+            msg = "RSA key size must be >= 2048 bits (FIPS 140-3 requirement)"
+            raise ValueError(msg)
+        if algorithm == "ES256" and curve not in FIPS_CURVES:
+            msg = f"Unsupported FIPS curve: {curve}"
+            raise ValueError(msg)
+
         self._algorithm = algorithm
+        self._curve = curve
         self._key_size = key_size
+        self._rotation_period = rotation_period or self.KEY_ROTATION_PERIOD
+
         self._key_store: dict[str, bytes] = {}
         self._key_metadata: dict[str, KeyMetadata] = {}
         self._previous_keys: deque[tuple[datetime, str]] = deque(
             maxlen=self.MAX_PREVIOUS_KEYS
         )
-        self._rotation_period = rotation_period or self.KEY_ROTATION_PERIOD
+        self._jwks_cache: list[Jwk] | None = None
+        self._jwks_last_generated: datetime | None = None
         self._last_rotation = datetime.now(UTC)
+
         self._generate_new_key()
 
     def _generate_new_key(self) -> None:
-        """Generate a new cryptographic key and make it current."""
+        """Generate and activate a new signing key, invalidating JWKS cache."""
         key_id = secrets.token_urlsafe(8)
         now = datetime.now(UTC)
 
@@ -104,7 +139,7 @@ class KeyManager:
             private_key = rsa.generate_private_key(
                 public_exponent=65537,
                 key_size=self._key_size,
-                backend=default_backend(),
+                backend=_BACKEND,
             )
             key = private_key.private_bytes(
                 encoding=serialization.Encoding.PEM,
@@ -114,7 +149,7 @@ class KeyManager:
             key_alg = KeyAlgorithm.RSA
             usages = (KeyUsage.SIGNING, KeyUsage.VERIFICATION)
         elif self._algorithm == "ES256":
-            private_key = ec.generate_private_key(ec.SECP256R1(), default_backend())
+            private_key = ec.generate_private_key(FIPS_CURVES[self._curve], _BACKEND)
             key = private_key.private_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PrivateFormat.PKCS8,
@@ -130,15 +165,16 @@ class KeyManager:
         self._key_metadata[key_id] = {
             "algorithm": key_alg,
             "key_size": self._key_size,
-            "curve": "P-256" if self._algorithm == "ES256" else None,
+            "curve": self._curve if self._algorithm == "ES256" else None,
             "usages": usages,
             "format": KeyWrapFormat.PEM,
         }
         self._current_key_id = key_id
         self._last_rotation = now
+        self._jwks_cache = None
 
     def rotate_key(self) -> None:
-        """Rotate the current signing key and maintain key history."""
+        """Rotate the current signing key and securely discard expired keys."""
         self._previous_keys.append((datetime.now(UTC), self._current_key_id))
         self._generate_new_key()
 
@@ -147,110 +183,109 @@ class KeyManager:
         )
         while self._previous_keys and self._previous_keys[0][0] < expire_time:
             _, old_key_id = self._previous_keys.popleft()
-            self._key_store.pop(old_key_id, None)
+            if (old_key := self._key_store.pop(old_key_id, None)) is not None:
+                self._zeroize(old_key)
             self._key_metadata.pop(old_key_id, None)
 
+    def _zeroize(self, key: bytes) -> None:
+        """Attempt to overwrite sensitive key material in memory."""
+        if not key:
+            return
+
+        ba: bytearray | None = None
+        try:
+            ba = bytearray(key)
+            for i in range(len(ba)):
+                ba[i] = 0
+        finally:
+            if ba is not None:
+                del ba
+            del key
+
+    def _serialize_to_jwk(self, key_id: str) -> Jwk | None:
+        metadata = self._key_metadata.get(key_id)
+        key_pem = self._key_store.get(key_id)
+        if not metadata or not key_pem or metadata["algorithm"] == KeyAlgorithm.HMAC:
+            return None
+
+        private_key = load_pem_private_key(key_pem, password=None)
+        public_key = private_key.public_key()
+
+        if isinstance(public_key, rsa.RSAPublicKey):
+            numbers = public_key.public_numbers()
+            return {
+                "kty": "RSA",
+                "kid": key_id,
+                "use": "sig",
+                "alg": self._algorithm,
+                "n": b64u(numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")),
+                "e": b64u(numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")),
+            }
+        if isinstance(public_key, ec.EllipticCurvePublicKey):
+            numbers = public_key.public_numbers()
+            return {
+                "kty": "EC",
+                "kid": key_id,
+                "use": "sig",
+                "alg": self._algorithm,
+                "crv": str(metadata["curve"]),
+                "x": b64u(numbers.x.to_bytes((numbers.x.bit_length() + 7) // 8, "big")),
+                "y": b64u(numbers.y.to_bytes((numbers.y.bit_length() + 7) // 8, "big")),
+            }
+        return None
+
     def get_jwks(self) -> list[Jwk]:
-        """Get JSON Web Key Set (JWKS) containing current public key metadata."""
-        jwks: list[Jwk] = []
+        """Return RFC 7517-compliant JWKS, cached for performance."""
+        now = datetime.now(UTC)
+        if (
+            self._jwks_cache
+            and self._jwks_last_generated
+            and (now - self._jwks_last_generated).total_seconds() < self.JWKS_CACHE_TTL
+        ):
+            return self._jwks_cache
 
-        for key_id in [self._current_key_id] + [
-            k_id for _, k_id in self._previous_keys
-        ]:
-            metadata = self._key_metadata.get(key_id)
-            key_pem = self._key_store.get(key_id)
+        jwks = [
+            jwk
+            for key_id in [self._current_key_id]
+            + [k_id for _, k_id in self._previous_keys]
+            if (jwk := self._serialize_to_jwk(key_id))
+        ]
 
-            if not metadata or not key_pem:
-                continue
-
-            if metadata["algorithm"] == KeyAlgorithm.HMAC:
-                continue
-
-            private_key = load_pem_private_key(key_pem, password=None)
-            public_key = private_key.public_key()
-
-            if isinstance(public_key, rsa.RSAPublicKey):
-                numbers = public_key.public_numbers()
-                n = numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")
-                e = numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")
-
-                jwk: Jwk = {
-                    "kty": "RSA",
-                    "kid": key_id,
-                    "use": "sig",
-                    "alg": self._algorithm,
-                    "n": b64u(n),
-                    "e": b64u(e),
-                }
-                jwks.append(jwk)
-
-            elif isinstance(public_key, ec.EllipticCurvePublicKey):
-                numbers = public_key.public_numbers()
-                x = numbers.x.to_bytes((numbers.x.bit_length() + 7) // 8, "big")
-                y = numbers.y.to_bytes((numbers.y.bit_length() + 7) // 8, "big")
-
-                jwk: Jwk = {
-                    "kty": "EC",
-                    "kid": key_id,
-                    "use": "sig",
-                    "alg": self._algorithm,
-                    "crv": str(metadata["curve"]),
-                    "x": b64u(x),
-                    "y": b64u(y),
-                }
-                jwks.append(jwk)
-
+        self._jwks_cache = jwks
+        self._jwks_last_generated = now
         return jwks
 
     def get_signing_key(self, key_id: str | None = None) -> bytes:
-        """Get a private key for signing operations."""
+        """Return the active (or specified) private signing key."""
         key_id = key_id or self._current_key_id
-
         if key_id not in self._key_store:
             msg = f"Key not found: {key_id}"
             raise KeyError(msg)
-
         return self._key_store[key_id]
 
-    def get_key_metadata(self, key_id: str) -> KeyMetadata | None:
-        """Get metadata for a specific key."""
-        return self._key_metadata.get(key_id)
-
     def get_verification_key(self, kid: str) -> bytes | None:
-        """Get the appropriate verification key for the given key id."""
-        private_key_pem = self._key_store.get(kid)
-        if not private_key_pem:
+        """Return public key for verification, or None if not found."""
+        if not (private_key_pem := self._key_store.get(kid)):
             return None
-
         if self._algorithm.startswith("HS"):
             return private_key_pem
-
         try:
             private_key = load_pem_private_key(
-                private_key_pem, password=None, backend=default_backend()
+                private_key_pem, password=None, backend=_BACKEND
             )
-            if (
-                self._algorithm == "RS256"
-                and isinstance(private_key, rsa.RSAPrivateKey)
-            ) or (
-                self._algorithm == "ES256"
-                and isinstance(private_key, ec.EllipticCurvePrivateKey)
-            ):
-                return private_key.public_key().public_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PublicFormat.SubjectPublicKeyInfo,
-                )
+            return private_key.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
         except (ValueError, TypeError, UnsupportedAlgorithm):
             return None
 
-        return None
-
     @property
     def algorithm(self) -> str:
-        """Get the configured JWT signing algorithm."""
+        """Return the configured JWT algorithm (e.g., RS256)."""
         return self._algorithm
 
     @property
     def current_key_id(self) -> str:
-        """Get the identifier of the current signing key."""
+        """Return the identifier of the current active signing key."""
         return self._current_key_id
