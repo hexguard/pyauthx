@@ -82,6 +82,10 @@ class TokenPayload(BaseModel):
         default_factory=lambda: datetime.now(UTC).timestamp(),
         description="Issued-at timestamp (seconds since epoch)",
     )
+    nbf: float | None = Field(
+        default=None,
+        description="Not-before timestamp (seconds since epoch)",
+    )
     jti: UUID = Field(default_factory=uuid4, description="Unique JWT ID")
     aud: ClientId = Field(..., description="Intended audience (client ID)")
 
@@ -122,6 +126,15 @@ class TokenPayload(BaseModel):
             msg = "Expiration timestamp must be greater than issued-at timestamp."
             raise ValueError(msg)
         return exp
+
+    @field_validator("nbf")
+    @classmethod
+    def validate_nbf(cls, nbf: float | None, info: ValidationInfo) -> float | None:
+        """Ensure nbf <= exp (if present)."""
+        if nbf is not None and (exp := info.data.get("exp")) and nbf >= exp:
+            msg = "nbf must be strictly before exp"
+            raise ValueError(msg)
+        return nbf
 
     @field_validator("nonce")
     @classmethod
